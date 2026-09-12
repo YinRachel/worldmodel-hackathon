@@ -1,0 +1,39 @@
+{
+  "label": "Demo furniture concepts",
+  "notice": "These are fictional design concepts, not real retailer products. Search is local; prices, stock and product images are unavailable. Dimensions are concept specifications, not verified product measurements.",
+  "products": [
+    {
+      "id": "demo-sage-sofa",
+      "name": "Sage compact sofa",
+      "style": "Scandinavian",
+      "color": "green",
+      "swatch": "#859681",
+      "seats": 2,
+      "dimensions_cm": {"width": 160, "depth": 86, "height": 80},
+      "description": "A compact sage-green sofa concept with simple lines and wooden legs.",
+      "tags": ["sage", "compact", "small", "scandinavian", "minimal", "wood", "wooden"]
+    },
+    {
+      "id": "demo-cream-sofa",
+      "name": "Cream curved sofa",
+      "style": "Contemporary",
+      "color": "cream",
+      "swatch": "#DDD2BE",
+      "seats": 3,
+      "dimensions_cm": {"width": 220, "depth": 98, "height": 78},
+      "description": "A cream sofa concept with curved arms and a soft rounded silhouette.",
+      "tags": ["cream", "beige", "neutral", "curved", "rounded", "contemporary", "modern", "large"]
+    },
+    {
+      "id": "demo-blue-sofa",
+      "name": "Blue studio sofa",
+      "style": "Mid-century",
+      "color": "blue",
+      "swatch": "#4D6C87",
+      "seats": 2,
+      "dimensions_cm": {"width": 180, "depth": 88, "height": 82},
+      "description": "A blue two-seat sofa concept with tapered wooden legs and tailored cushions.",
+      "tags": ["blue", "navy", "mid-century", "midcentury", "retro", "studio", "wood", "wooden"]
+    }
+  ]
+}

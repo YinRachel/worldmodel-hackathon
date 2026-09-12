@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Room editor · Select an object</title>
+<style>
+body{font:16px system-ui;background:#f5f3ee;color:#263b33;margin:0;padding:28px;max-width:1200px;margin:auto}h1{margin-bottom:8px}p{line-height:1.5}.toolbar{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:22px 0}button{padding:12px 18px;border:1px solid #b4c2b8;border-radius:8px;background:white;cursor:pointer}button.primary{background:#285844;color:white}button:disabled{opacity:.5;cursor:default}.stage{position:relative;line-height:0;background:#ddd;border-radius:12px;overflow:hidden}.stage img{width:100%;display:block}.stage canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}#status{min-height:28px}label{display:flex;gap:10px;align-items:center}
+#insertion{margin-top:40px;border-top:1px solid #b4c2b8;padding-top:20px}#insertion textarea{width:100%;box-sizing:border-box;padding:12px;font:inherit}#insertion-preview{display:flex;gap:20px;flex-wrap:wrap;margin:20px 0}#insertion-preview img{height:150px;max-width:100%;object-fit:contain}#furnished{width:100%;border-radius:12px}</style>
+<h1>Empty room → Your next room</h1>
+<p>Step 1 · Review furniture to remove. Step 2 · Find furniture. Step 3 · Insert your selected item into the room photo. Step 4 · Create a room video.</p>
+
+<section>
+  <h2>1. Upload and delete the item in the room</h2>
+  <p>Upload a room</p>
+  <input type="file" id="imageUpload" accept="image/*">
+
+</section>
+
+<p>Paint over the item you want to delete and its shadow. The orange area marks your selection. Save your selection.</p>
+<div class="toolbar"><label>Brush <input id="size" type="range" min="4" max="100" value="25"></label><label><input type="checkbox" id="erase"> Eraser</label><button id="undo">Undo stroke</button><button id="clear">Clear selection</button><button class="primary" id="save" disabled>Save deletion mask</button><button class="primary" id="delete">Delete selected object</button></div>
+<div class="stage">
+  <img id="room" alt="Uploaded room">
+  <canvas id="overlay" aria-label="Paint over the furniture you want to remove"></canvas>
+</div>
+<p id="status" role="status">Loading room photo…</p>
+<div id="result" hidden><h2>Deletion result</h2><img id="edited" style="width:100%" alt="Room after deleting the selected furniture"><p><a id="download" download>Download edited room</a></p></div>
+<div class="toolbar"><button id="continue-cleaning" hidden>Continue cleaning this image</button><button id="approve" class="primary" hidden>Use this room</button></div>
+<section><h2>2. Choose furniture</h2><p>Search UK shopping listings. Prices and availability must be checked with the retailer. Dimensions are not verified; product pictures are search thumbnails.</p><form id="search"><input id="query" placeholder="Try: green sofa" aria-label="Describe furniture"><button>Search furniture</button></form><div id="products" class="toolbar"></div><p id="choice" role="status"></p></section>
+<section id="insertion"><h2>3. Insert your furniture into the room</h2><p>Use your cleaner room and selected product photo to create a furnished preview. Size and placement are approximate; this does not verify physical fit. Each generation uses Runware credits.</p><div id="insertion-preview"><div><p>Room to furnish</p><img id="insertion-room" alt="Cleaner room selected for insertion" hidden></div><div><p>Selected furniture</p><img id="insertion-furniture" alt="Selected furniture reference" hidden><p id="insertion-name"></p></div></div><label for="insertion-prompt">Where should the furniture go?</label><textarea id="insertion-prompt" rows="3" maxlength="1000">On the open green carpet to the left of the existing table, facing the camera. Keep clear of the table and doorway.</textarea><div class="toolbar"><button id="insert-furniture" class="primary" disabled>Insert selected furniture</button></div><p id="insertion-status" role="status">Choose furniture and click “Use this room” on your final cleaning result.</p><div id="insertion-result" hidden><h3>Furnished room preview</h3><p id="insertion-result-label"></p><img id="furnished" alt="Room with selected furniture inserted"><p><a id="furnished-download" download>Download furnished room</a></p></div></section>
+<section id="video-section" style="margin-top:40px;border-top:1px solid #b4c2b8;padding-top:20px"><h2>4. Bring your furnished room to life</h2><p>Create a Helios video from the latest furnished preview in step 3. Gentle camera movement works best for showing the room. Generated details may change during motion. Each generation uses Reactor credits.</p><img id="video-source" hidden alt="Furnished room used for the video" style="max-width:100%;width:400px;border-radius:12px"><label for="video-prompt">Camera movement</label><textarea id="video-prompt" rows="3" maxlength="1500" style="width:100%;box-sizing:border-box;padding:12px;font:inherit">Slow, gentle camera push forward through this furnished room. Keep all furniture stationary. Preserve the furniture design, room layout, walls, lighting and materials. Smooth realistic interior walkthrough, no new objects.</textarea><div class="toolbar"><label>Duration <select id="video-seconds"><option value="3">3 seconds</option><option value="6" selected>6 seconds</option><option value="10">10 seconds</option></select></label><button id="generate-video" class="primary" disabled>Generate Helios video</button></div><p id="video-status" role="status">Generate a furnished room in step 3 first.</p><div id="video-result" hidden><p id="video-label"></p><video id="room-video" controls playsinline preload="metadata" style="width:100%;border-radius:12px"></video><p><a id="video-download" download>Download video</a></p></div></section>
+<script>
+const room=document.querySelector('#room'),overlay=document.querySelector('#overlay'),ctx=overlay.getContext('2d');
+const mask=document.createElement('canvas'),m=mask.getContext('2d');
+const status=document.querySelector('#status'),save=document.querySelector('#save');
+let activeRoomId=null; let deleting=false;
+let drawing=false,last=null,history=[],ready=false; let roomSelectionApplied=false; let clearMode=false; let plan; let state={};
+function render(){ctx.clearRect(0,0,overlay.width,overlay.height);ctx.drawImage(mask,0,0);ctx.globalCompositeOperation='source-in';ctx.fillStyle='rgba(255,115,40,.6)';ctx.fillRect(0,0,overlay.width,overlay.height);ctx.globalCompositeOperation='source-over';save.disabled=!ready||deleting;document.querySelector('#delete').disabled=!ready||deleting;document.querySelector('#continue-cleaning').disabled=deleting;document.querySelector('#approve').disabled=deleting;}
+
+
+function init(){
+  overlay.width = mask.width = room.naturalWidth;
+  overlay.height = mask.height = room.naturalHeight;
+
+  m.clearRect(0, 0, mask.width, mask.height);
+
+  ready = true;
+
+  status.textContent =
+    'Paint over the object you want to remove, including its edges and shadow.';
+
+  render();
+}
+
+room.onload = init;
+
+room.onerror = () => {
+  status.textContent = 'Could not load uploaded image.';
+};
+
+
+function loadSavedMask(){const saved=new Image();saved.onload=()=>{m.drawImage(saved,0,0);const p=m.getImageData(0,0,mask.width,mask.height);for(let i=0;i<p.data.length;i+=4)p.data[i+3]=p.data[i]>127?255:0;m.putImageData(p,0,0);render();status.textContent='Your saved selection is restored. Adjust it or click Delete selected object.';};saved.src='/latest-mask';}
+function point(e){const r=overlay.getBoundingClientRect();return [(e.clientX-r.left)*overlay.width/r.width,(e.clientY-r.top)*overlay.height/r.height];}
+function paint(p){m.globalCompositeOperation=document.querySelector('#erase').checked?'destination-out':'source-over';m.strokeStyle='white';m.fillStyle='white';m.lineWidth=+document.querySelector('#size').value*overlay.width/overlay.getBoundingClientRect().width;m.lineCap='round';m.lineJoin='round';m.beginPath();m.moveTo(...(last||p));m.lineTo(...p);m.stroke();m.beginPath();m.arc(...p,m.lineWidth/2,0,Math.PI*2);m.fill();last=p;render();}
+overlay.onpointerdown=e=>{if(!ready)return;e.preventDefault();history.push(m.getImageData(0,0,mask.width,mask.height));if(history.length>5)history.shift();drawing=true;last=null;overlay.setPointerCapture(e.pointerId);paint(point(e));};
+overlay.onpointermove=e=>{if(drawing)paint(point(e));};
+function end(){drawing=false;last=null;}overlay.onpointerup=end;overlay.onpointercancel=end;
+document.querySelector('#clear').onclick=()=>{roomSelectionApplied=false;history.push(m.getImageData(0,0,mask.width,mask.height));if(history.length>5)history.shift();m.clearRect(0,0,mask.width,mask.height);render();};
+document.querySelector('#undo').onclick=()=>{if(history.length)m.putImageData(history.pop(),0,0);render();};
+async function submitSelection(remove=false){if(!ready||!activeRoomId||deleting)return;const pixels=m.getImageData(0,0,mask.width,mask.height);let count=0;for(let i=0;i<pixels.data.length;i+=4){const v=pixels.data[i+3]>127?255:0;if(v)count++;pixels.data[i]=pixels.data[i+1]=pixels.data[i+2]=v;pixels.data[i+3]=255;}if(!count){status.textContent='Paint a selection before saving.';return;}if(count===mask.width*mask.height){status.textContent='Select only the furniture, not the whole photo.';return;}const out=document.createElement('canvas');out.width=mask.width;out.height=mask.height;out.getContext('2d').putImageData(pixels,0,0);deleting=true;imageUpload.disabled=true;save.disabled=true;document.querySelector('#delete').disabled=true;status.textContent=remove?'Removing selection with Runware… This may take a minute.':'Saving selection…';try{const blob=await new Promise(resolve=>out.toBlob(resolve,'image/png'));const response=await fetch(remove?(clearMode?'/clear-room':'/delete'):'/save-mask',{method:'POST',headers:{'Content-Type':'image/png','X-Room-Id':activeRoomId},body:blob});const data=await response.json();if(!response.ok)throw Error(data.error);if(remove){if(data.job_id){await waitJob(data.job_id);return;}document.querySelector('#edited').src=data.url;document.querySelector('#download').href=data.url;document.querySelector('#result').hidden=false;await refreshState();status.textContent='Deletion complete. Compare the result with the original above.';}else{status.textContent='Saved '+data.path;}}catch(e){status.textContent='Save failed: '+e.message;}finally{deleting=false;imageUpload.disabled=false;render();}};
+save.onclick=()=>submitSelection(false);document.querySelector('#delete').onclick=()=>{clearMode=false;submitSelection(true);};
+
+async function jsonFetch(url, options){const r=await fetch(url,options);const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d;}
+
+async function refreshState(){
+  state = await jsonFetch('/state');
+
+  window.dispatchEvent(
+    new CustomEvent('room-state', {detail: state})
+  );
+
+  document.querySelector('#choice').textContent =
+    state.selected_product
+      ? 'Selected: ' + state.selected_product.name
+      : '';
+
+  if(state.source_image && activeRoomId!==state.source_image.id){
+    ready=false;history=[];drawing=false;last=null;activeRoomId=state.source_image.id;
+    room.src=state.source_image.url;
+  }
+  document.querySelector('#result').hidden=!state.room_candidate;
+  document.querySelector('#approve').hidden=!state.room_candidate;
+  document.querySelector('#continue-cleaning').hidden=!state.room_candidate;
+  if(state.room_candidate){document.querySelector('#edited').src=state.room_candidate;document.querySelector('#download').href=state.room_candidate;}
+  document.querySelector('#insertion-result').hidden=!state.insertion;
+  document.querySelector('#video-result').hidden=!state.video;
+  renderInsertion();
+  renderVideo();
+}
+
+document.querySelector('#continue-cleaning').onclick=async()=>{
+ const button=document.querySelector('#continue-cleaning');button.disabled=true;
+ try{
+   await jsonFetch('/continue-cleaning',{method:'POST',body:'{}'});
+   await refreshState();
+   room.scrollIntoView({behavior:'smooth',block:'center'});
+ }catch(e){status.textContent=e.message;}
+ finally{button.disabled=false;}
+};
+document.querySelector('#approve').onclick=async()=>{try{await jsonFetch('/approve-room',{method:'POST',body:'{}'});await refreshState();status.textContent='Room accepted. Continue to furniture search and insertion.';}catch(e){status.textContent=e.message;}};
+
+async function search(){try{document.querySelector('#choice').textContent='Searching UK shopping listings…';const products=await jsonFetch('/catalog?q='+encodeURIComponent(document.querySelector('#query').value));const host=document.querySelector('#products');host.replaceChildren();for(const p of products){const card=document.createElement('article');card.style='background:white;padding:18px;border-radius:12px;min-width:210px;max-width:300px';const title=document.createElement('h3');title.textContent=p.name;const info=document.createElement('p');info.textContent=(p.retailer||'Unknown retailer')+' · '+(p.price||'Price unavailable')+' · Dimensions not verified';const btn=document.createElement('button');btn.textContent='Choose this furniture';btn.onclick=async()=>{await jsonFetch('/choose-furniture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:p.id})});await refreshState();};if(p.image_url){const img=document.createElement('img');img.src=p.image_url;img.alt=p.name;img.loading='lazy';img.referrerPolicy='no-referrer';img.style='width:100%;height:160px;object-fit:contain';card.append(img);}card.append(title,info,btn);if(p.product_url){const link=document.createElement('a');link.href=p.product_url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='View product listing';link.style='display:block;margin-top:12px';card.append(link);}host.append(card);}document.querySelector('#choice').textContent='';if(!products.length)host.textContent='Enter a furniture description to search, or try a broader query.';}catch(e){document.querySelector('#choice').textContent=e.message;}}
+document.querySelector('#search').onsubmit=e=>{e.preventDefault();search();};
+
+let inserting=false, watchedInsertion=null;
+function renderInsertion(){
+ const roomUrl=state.empty_room, product=state.selected_product;
+ const roomImg=document.querySelector('#insertion-room'),furnitureImg=document.querySelector('#insertion-furniture');
+ roomImg.hidden=!roomUrl;if(roomUrl)roomImg.src=roomUrl;
+ furnitureImg.hidden=!product?.image_url;if(product?.image_url)furnitureImg.src=product.image_url;
+ document.querySelector('#insertion-name').textContent=product?.name||'Choose furniture in step 2.';
+ document.querySelector('#insert-furniture').disabled=inserting||!roomUrl||!product?.image_url;
+ if(!inserting)document.querySelector('#insertion-status').textContent=roomUrl&&product?.image_url?'Ready to generate using the room and furniture shown above.':'Choose furniture and click “Use this room” on your final cleaning result.';
+ if(state.insertion){const result=state.insertion;document.querySelector('#insertion-result').hidden=false;document.querySelector('#furnished').src=result.url;document.querySelector('#furnished-download').href=result.url;document.querySelector('#insertion-result-label').textContent='Generated with '+result.product_name+(result.product_id!==product?.id||result.room_url!==roomUrl?' — previous selection. Generate again for your current selection.':'');}
+ if(state.insertion_job&&state.insertion_job!==watchedInsertion){watchInsertion(state.insertion_job);}
+}
+async function watchInsertion(id){
+ watchedInsertion=id;inserting=true;renderInsertion();
+ try{for(;;){const job=await jsonFetch('/jobs/'+id);if(job.status==='failed')throw Error(job.error);if(job.status==='complete'){await refreshState();document.querySelector('#insertion-status').textContent='Furniture inserted. Check the design, shadows and placement.';break;}document.querySelector('#insertion-status').textContent='Placing your furniture… This can take a few minutes. You can keep browsing.';await new Promise(resolve=>setTimeout(resolve,2000));}}
+ catch(e){document.querySelector('#insertion-status').textContent=e.message==='Unknown job'?'Previous generation is no longer running. You can generate a new preview.':e.message;}
+ finally{inserting=false;document.querySelector('#insert-furniture').disabled=!(state.empty_room)||!state.selected_product?.image_url;}
+}
+document.querySelector('#insert-furniture').onclick=async()=>{
+ const placement=document.querySelector('#insertion-prompt').value.trim();if(!placement){document.querySelector('#insertion-status').textContent='Describe where the furniture should go.';return;}
+ inserting=true;renderInsertion();document.querySelector('#insertion-status').textContent='Starting furniture insertion…';
+ try{const job=await jsonFetch('/insert-sofa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({placement})});await watchInsertion(job.job_id);}
+ catch(e){inserting=false;renderInsertion();document.querySelector('#insertion-status').textContent=e.message;}
+};
+
+let videoRunning=false,watchedVideo=null;
+function renderVideo(){
+ const source=state.insertion?.url,img=document.querySelector('#video-source');img.hidden=!source;if(source)img.src=source;
+ document.querySelector('#generate-video').disabled=videoRunning||!source;
+ if(!videoRunning)document.querySelector('#video-status').textContent=source?'Ready to animate the furnished image shown above.':'Generate a furnished room in step 3 first.';
+ if(state.video){const v=state.video,player=document.querySelector('#room-video');document.querySelector('#video-result').hidden=false;if(player.getAttribute('src')!==v.url)player.src=v.url;document.querySelector('#video-download').href=v.url;document.querySelector('#video-label').textContent=v.source_url===source?'Your furnished room video':'Video from a previous furnished preview. Generate again to use the latest image.';}
+ if(state.video_job&&state.video_job!==watchedVideo)watchVideo(state.video_job);
+}
+async function watchVideo(id){
+ watchedVideo=id;videoRunning=true;renderVideo();
+ try{for(;;){const job=await jsonFetch('/jobs/'+id);if(job.status==='failed')throw Error(job.error);if(job.status==='complete'){await refreshState();document.querySelector('#video-status').textContent='Video ready. Press play below.';break;}document.querySelector('#video-status').textContent=job.message||'Generating video…';await new Promise(resolve=>setTimeout(resolve,2000));}}
+ catch(e){document.querySelector('#video-status').textContent=e.message==='Unknown job'?'The previous video job is no longer available. You can generate again.':e.message;}
+ finally{videoRunning=false;document.querySelector('#generate-video').disabled=!state.insertion?.url;}
+}
+document.querySelector('#generate-video').onclick=async()=>{
+ const prompt=document.querySelector('#video-prompt').value.trim();if(!prompt){document.querySelector('#video-status').textContent='Describe the camera movement first.';return;}
+ videoRunning=true;renderVideo();document.querySelector('#video-status').textContent='Starting Helios…';
+ try{const job=await jsonFetch('/generate-video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,seconds:Number(document.querySelector('#video-seconds').value)})});await watchVideo(job.job_id);}
+ catch(e){videoRunning=false;renderVideo();document.querySelector('#video-status').textContent=e.message;}
+};
+
+(async()=>{
+  try{
+    await refreshState();
+    await search();
+  }catch(e){
+    console.error(e);
+  }
+})();
+
+
+
+const imageUpload = document.querySelector('#imageUpload');
+
+imageUpload.addEventListener('change', async () => {
+ const file=imageUpload.files[0];if(!file)return;
+ ready=false;history=[];drawing=false;last=null;render();imageUpload.disabled=true;
+ status.textContent='Uploading room photo…';
+ try{
+   await jsonFetch('/upload-room',{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});
+   await refreshState();
+ }catch(e){status.textContent='Upload failed: '+e.message;ready=!!activeRoomId;render();}
+ finally{imageUpload.disabled=false;imageUpload.value='';}
+});
+render();
+</script></html>
