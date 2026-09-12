@@ -94,21 +94,3 @@ Open **http://127.0.0.1:8000** in your browser.
 7. Enter a camera movement prompt, choose a duration, and generate a Helios video.
 8. Download your generated images and video.
 
-## Current Limitations
-
-- This is an early prototype, with insertion currently tailored to sofas.
-- Object removal uses manual selection rather than automatic object detection.
-- Some removal prompts are tailored to the supplied demo room.
-- Furniture scale and placement are visual estimates; physical fit is not verified.
-- Generated furniture details and room appearance may vary.
-- Shopping results use product thumbnails; confirm prices, availability, and dimensions with the retailer.
-- Video output is an AI-generated preview, not a measured 3D reconstruction.
-- Generation requires external API access and is subject to credits, latency, and service capacity.
-
-## Future Work
-
-- Dimension-aware furniture placement.
-- Better preservation of product appearance and room details.
-- Support for more furniture categories.
-- More general room-clearing prompts.
-- Easier comparison of alternative designs.
